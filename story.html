@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>寶可夢英語冒險 (TTS聽力版)</title>
+    <style>
+        :root {
+            --bg-color: #2c3e50;
+            --screen-bg: #ecf0f1;
+            --text-color: #2c3e50;
+            --btn-bg: #3498db;
+            --correct: #27ae60;
+            --wrong: #c0392b;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            user-select: none; /* 防止選取文字 */
+        }
+
+        #game-boy {
+            width: 100%;
+            max-width: 500px;
+            background: #f1c40f;
+            padding: 20px;
+            border-radius: 20px;
+            box-shadow: 0 10px 0 #c0392b;
+            border: 4px solid #333;
+            position: relative;
+        }
+
+        /* 喇叭孔裝飾 */
+        .speaker-holes {
+            position: absolute;
+            bottom: 25px;
+            right: 25px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px;
+            transform: rotate(-20deg);
+        }
+        .hole { width: 8px; height: 8px; background: #333; border-radius: 50%; opacity: 0.2; }
+
+        #screen-container {
+            background: #333;
+            padding: 15px;
+            border-radius: 10px 10px 40px 10px;
+            margin-bottom: 20px;
+        }
+
+        #screen {
+            background-color: var(--screen-bg);
+            height: 320px;
+            border-radius: 5px;
+            padding: 15px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 16px;
+            border: 2px solid #7f8c8d;
+        }
+
+        .msg { padding: 5px; border-bottom: 1px dashed #bdc3c7; animation: popIn 0.3s; }
+        .msg.system { color: #7f8c8d; font-size: 0.9em; }
+        .msg.battle { color: #d35400; font-weight: bold; }
+        
+        .msg.question { 
+            background: #e8f6f3; 
+            color: #16a085; 
+            font-weight: bold; 
+            border-left: 5px solid #1abc9c;
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .replay-btn {
+            background: none;
+            border: 2px solid #1abc9c;
+            color: #1abc9c;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .replay-btn:hover { background: #1abc9c; color: white; }
+
+        .msg.correct { color: var(--correct); font-weight: bold; background: #d5f5e3; }
+        .msg.wrong { color: var(--wrong); font-weight: bold; background: #fadbd8; }
+
+        #status-bar {
+            display: flex;
+            justify-content: space-between;
+            color: white;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+            font-family: monospace;
+        }
+
+        #controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        button.action-btn {
+            padding: 15px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: var(--btn-bg);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 5px 0 #21618c;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+
+        button.action-btn:active {
+            transform: translateY(5px);
+            box-shadow: none;
+        }
+
+        button.quiz-mode {
+            background-color: #8e44ad;
+            box-shadow: 0 5px 0 #6c3483;
+            font-size: 18px;
+        }
+        button.quiz-mode:active { box-shadow: none; }
+
+        @keyframes popIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+<div id="game-boy">
+    <div id="screen-container">
+        <div id="status-bar">
+            <span id="p-status">等待開始...</span>
+            <span id="e-status"></span>
+        </div>
+        <div id="screen"></div>
+    </div>
+
+    <div id="controls">
+        <button id="btn1" class="action-btn" onclick="handleInput(0)">選項 1</button>
+        <button id="btn2" class="action-btn" onclick="handleInput(1)">選項 2</button>
+        <button id="btn3" class="action-btn" onclick="handleInput(2)">選項 3</button>
+        <button id="btn4" class="action-btn" onclick="handleInput(3)">選項 4</button>
+    </div>
+
+    <div class="speaker-holes">
+        <div class="hole"></div><div class="hole"></div><div class="hole"></div>
+        <div class="hole"></div><div class="hole"></div><div class="hole"></div>
+    </div>
+</div>
+
+<script>
+    // ==========================================
+    // 🗣️ TTS 語音設定 (Text-To-Speech)
+    // ==========================================
+    const synth = window.speechSynthesis;
+    
+    function speak(text, lang = 'en-US') {
+        if (!synth) return; // 瀏覽器不支援
+        
+        // 停止目前的發音，避免重疊
+        synth.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = lang; // 設定語言
+        utterance.rate = 0.8;  // 語速 (0.1 ~ 10)，0.8適合小孩
+        utterance.pitch = 1.1; // 音調稍微高一點點
+
+        // 嘗試選取更好的聲音 (部分瀏覽器支援)
+        const voices = synth.getVoices();
+        // 優先找 Google 或 Microsoft 的英文女聲
+        const preferredVoice = voices.find(v => 
+            v.lang.includes('en') && (v.name.includes('Google') || v.name.includes('Female'))
+        );
+        if (preferredVoice) utterance.voice = preferredVoice;
+
+        synth.speak(utterance);
+    }
+
+    // 瀏覽器載入聲音是異步的，確保聲音列表載入
+    window.speechSynthesis.onvoiceschanged = () => {
+        // 觸發一次列表更新
+        window.speechSynthesis.getVoices();
+    };
+
+
+    // ==========================================
+    // 📚 題庫 (增加 speak 欄位指定要朗讀的內容)
+    // ==========================================
+    const questionBank = [
+        // 聽力題：題目是中文，朗讀英文單字，選英文
+        { q: "「蘋果」的英文是？", speak: "Apple", options: ["Apple", "Banana", "Cat", "Dog"], ans: 0 },
+        { q: "「大象」的英文是？", speak: "Elephant", options: ["Lion", "Tiger", "Elephant", "Monkey"], ans: 2 },
+        
+        // 單字題：題目是英文單字，朗讀該單字
+        { q: "Red 的意思是？", speak: "Red", options: ["藍色", "綠色", "紅色", "黃色"], ans: 2 },
+        { q: "Teacher 的意思是？", speak: "Teacher", options: ["學生", "老師", "醫生", "護士"], ans: 1 },
+        
+        // 句子填空：朗讀完整句子
+        { q: "I ___ a student. (我是學生)", speak: "I am a student", options: ["is", "am", "are", "be"], ans: 1 },
+        { q: "She ___ a cat. (她有一隻貓)", speak: "She has a cat", options: ["have", "has", "is", "are"], ans: 1 },
+        
+        // 數字題
+        { q: "One, Two, Three, ____, Five", speak: "One, Two, Three, Four, Five", options: ["Six", "Four", "Ten", "Zero"], ans: 1 },
+        { q: "What day is today?", speak: "What day is today?", options: ["Monday", "Friday", "Sunday", "Today"], ans: 2 }
+    ];
+
+    // ==========================================
+    // 🎮 遊戲核心
+    // ==========================================
+    
+    const player = { name: "", hp: 100, maxHp: 100, atk: 25 };
+    let enemy = null;
+    let gameState = "start"; 
+    let currentQuestion = null;
+
+    const screen = document.getElementById("screen");
+    const btns = [
+        document.getElementById("btn1"),
+        document.getElementById("btn2"),
+        document.getElementById("btn3"),
+        document.getElementById("btn4")
+    ];
+
+    function log(msg, type="system", speakText = null) {
+        const div = document.createElement("div");
+        div.className = `msg ${type}`;
+        
+        // 如果有傳入 speakText，顯示重播按鈕
+        if (speakText) {
+            div.innerHTML = `<span>${msg}</span> <button class="replay-btn" onclick="speak('${speakText.replace(/'/g, "\\'")}')">🔊</button>`;
+            // 自動播放
+            setTimeout(() => speak(speakText), 100);
+        } else {
+            div.innerHTML = msg;
+        }
+
+        screen.appendChild(div);
+        screen.scrollTop = screen.scrollHeight;
+    }
+
+    function updateStatus() {
+        document.getElementById("p-status").innerText = `${player.name} HP: ${player.hp}`;
+        if (enemy) {
+            document.getElementById("e-status").innerText = `🆚 ${enemy.name} HP: ${enemy.hp}`;
+        } else {
+            document.getElementById("e-status").innerText = "";
+        }
+    }
+
+    function setButtons(labels, mode = "normal") {
+        btns.forEach((btn, i) => {
+            if (labels[i]) {
+                btn.style.display = "block";
+                btn.innerText = labels[i];
+                btn.className = mode === "quiz" ? "action-btn quiz-mode" : "action-btn";
+            } else {
+                btn.style.display = "none";
+            }
+        });
+    }
+
+    // --- 流程控制 ---
+
+    function initGame() {
+        log("歡迎來到寶可夢英語冒險！(開啟聲音)", "system");
+        log("請選擇你的初始夥伴：");
+        gameState = "start";
+        setButtons(["🔥 小火龍", "💧 傑尼龜", "🍃 妙蛙種子", ""]);
+    }
+
+    function handleInput(index) {
+        // 解鎖 Audio Context (部分瀏覽器需要第一次點擊才能發聲)
+        if (!gameState) return;
+
+        if (gameState === "start") {
+            const names = ["小火龍", "傑尼龜", "妙蛙種子"];
+            player.name = names[index];
+            log(`就決定是你了，${player.name}！`, "correct");
+            speak("Welcome to the Pokemon World"); // 測試發音
+            explore();
+        } 
+        else if (gameState === "explore") {
+            if (index === 0) encounter();
+            if (index === 1) rest();
+        } 
+        else if (gameState === "battle") {
+            if (index === 0) startQuiz();
+            if (index === 1) heal();
+            if (index === 2) run();
+        } 
+        else if (gameState === "quiz") {
+            checkAnswer(index);
+        }
+        else if (gameState === "win" || gameState === "lose") {
+            location.reload();
+        }
+    }
+
+    function explore() {
+        gameState = "explore";
+        enemy = null;
+        updateStatus();
+        log("----------------");
+        log("你在常磐森林中探索...", "system");
+        setButtons(["🔍 尋找寶可夢", "💤 休息 (回血)", "", ""]);
+    }
+
+    function rest() {
+        player.hp = player.maxHp;
+        log(`${player.name} 體力全滿！`, "correct");
+        speak("Full power");
+        updateStatus();
+    }
+
+    function encounter() {
+        const enemies = [
+            { name: "Pikachu", hp: 60, atk: 15 },
+            { name: "Eevee", hp: 50, atk: 12 },
+            { name: "Snorlax", hp: 120, atk: 8 },
+            { name: "Meowth", hp: 45, atk: 10 }
+        ];
+        const template = enemies[Math.floor(Math.random() * enemies.length)];
+        enemy = JSON.parse(JSON.stringify(template));
+
+        gameState = "battle";
+        log(`Wild <strong>${enemy.name}</strong> appeared!`, "battle");
+        speak(`Wild ${enemy.name} appeared`);
+        updateStatus();
+        setButtons(["⚔️ 英語對決", "💊 傷藥", "🏃 逃跑", ""]);
+    }
+
+    // --- 答題與語音邏輯 ---
+
+    function startQuiz() {
+        gameState = "quiz";
+        const qIndex = Math.floor(Math.random() * questionBank.length);
+        currentQuestion = questionBank[qIndex];
+
+        // 顯示題目，並傳入要朗讀的文字
+        log(`Q: ${currentQuestion.q}`, "question", currentQuestion.speak);
+        
+        setButtons(currentQuestion.options, "quiz");
+    }
+
+    function checkAnswer(ansIndex) {
+        const selectedOption = currentQuestion.options[ansIndex];
+        
+        // 點擊選項時，如果選項是英文，朗讀選項
+        // 簡易判斷：是否包含英文字母
+        if (/[a-zA-Z]/.test(selectedOption)) {
+            speak(selectedOption);
+        }
+
+        setTimeout(() => {
+            if (ansIndex === currentQuestion.ans) {
+                log("✅ Correct!", "correct");
+                // 額外朗讀讚美詞
+                const praises = ["Good job", "Excellent", "Nice", "Great"];
+                speak(praises[Math.floor(Math.random()*praises.length)]);
+                playerAttack(true);
+            } else {
+                log(`❌ Wrong! The answer is: ${currentQuestion.options[currentQuestion.ans]}`, "wrong");
+                speak("Oh no");
+                playerAttack(false);
+            }
+        }, 500); // 稍微延遲讓選項聲音先出來
+    }
+
+    function playerAttack(isCorrect) {
+        setTimeout(() => {
+            if (isCorrect) {
+                const dmg = Math.floor(player.atk * 1.5 + Math.random() * 10);
+                enemy.hp -= dmg;
+                log(`${player.name} attack! -${dmg} HP`, "correct");
+            } else {
+                const dmg = Math.floor(player.atk * 0.2);
+                enemy.hp -= dmg;
+                log(`攻擊失誤了... -${dmg} HP`, "system");
+            }
+
+            if (enemy.hp <= 0) {
+                enemy.hp = 0;
+                updateStatus();
+                log(`🎉 You won!`, "correct");
+                speak("You won!");
+                setTimeout(explore, 2000);
+            } else {
+                updateStatus();
+                setTimeout(enemyTurn, 1000);
+            }
+        }, 800);
+    }
+
+    function enemyTurn() {
+        const dmg = Math.floor(enemy.atk * 0.8 + Math.random() * 5);
+        player.hp -= dmg;
+        log(`${enemy.name} attacks! -${dmg} HP`, "wrong");
+        updateStatus();
+
+        if (player.hp <= 0) {
+            gameState = "lose";
+            log("Game Over...", "wrong");
+            speak("Game Over");
+            setButtons(["重新開始", "", "", ""]);
+        } else {
+            gameState = "battle";
+            setButtons(["⚔️ 英語對決", "💊 傷藥", "🏃 逃跑", ""]);
+        }
+    }
+
+    function heal() {
+        player.hp = Math.min(player.hp + 40, player.maxHp);
+        log("使用了傷藥。", "system");
+        speak("Healing");
+        updateStatus();
+        setTimeout(enemyTurn, 1000);
+    }
+
+    function run() {
+        log("逃跑成功！", "system");
+        speak("Run away");
+        explore();
+    }
+
+    // 啟動
+    initGame();
+
+</script>
+</body>
+</html>
